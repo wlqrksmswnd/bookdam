@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Noto Sans KR", system-ui, sans-serif;
+  --font-serif: "Gowun Batang", serif;
+
+  /* 북담 색상: 종이 / 잉크 / 책갈피 */
+  --color-paper: #faf7f2;
+  --color-ink: #2b2522;
+  --color-accent: #a0522d;
+  --color-accent-dark: #7f3f20;
+}
+
+body {
+  @apply bg-paper text-ink font-sans antialiased;
+}
