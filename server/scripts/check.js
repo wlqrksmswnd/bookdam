@@ -1,9 +1,3 @@
-// 북담 백엔드 통합 검사
-// 사용법: server 폴더에서  npm run check
-//
-// 실제 DB 에 연결해 서버를 잠깐 띄우고 회원가입 → 로그인 → 리뷰 작성/수정/삭제 → 회원별 조회까지
-// 전부 호출해 본 뒤, 검사용으로 만든 회원/도서/리뷰는 마지막에 모두 지웁니다.
-// 국립중앙도서관 API 키가 없어도 돌아가도록 검사용 도서는 DB 에 직접 넣습니다.
 import 'dotenv/config';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -43,12 +37,10 @@ async function waitForServer(child) {
   child.stderr.on('data', (d) => (output += d));
   for (let i = 0; i < 50; i++) {
     if (child.exitCode !== null) throw new Error(`서버가 바로 종료됨:\n${output}`);
-    try {
-      const r = await fetch(`${BASE}/health`);
-      if (r.ok) return;
-    } catch {
-      /* 아직 안 뜸 */
-    }
+    const up = await fetch(`${BASE}/health`)
+      .then((r) => r.ok)
+      .catch(() => false);
+    if (up) return;
     await new Promise((r) => setTimeout(r, 200));
   }
   throw new Error(`서버가 10초 안에 뜨지 않음:\n${output}`);
@@ -63,7 +55,6 @@ let testBookId = null;
 let server = null;
 
 async function run() {
-  // ── 1. DB ───────────────────────────────────────────
   console.log('\n[1] DB 연결 / 테이블 구조');
   try {
     await pool.query('SELECT 1');
@@ -99,7 +90,6 @@ async function run() {
     `AUTO_INCREMENT 가 켜진 테이블: ${aiTables.join(', ') || '없음'}`,
   );
 
-  // ── 2. 서버 기동 ────────────────────────────────────
   console.log('\n[2] 서버 기동');
   server = spawn(process.execPath, ['src/index.js'], {
     cwd: serverDir,
@@ -113,7 +103,6 @@ async function run() {
     return;
   }
 
-  // ── 3. 회원가입 / 로그인 ─────────────────────────────
   console.log('\n[3] 회원가입 / 로그인');
   let r = await call('POST', '/auth/register', { body: userA });
   expect('회원가입 A', r.status === 201 && r.data.token, `${r.status} ${JSON.stringify(r.data)}`);
@@ -149,7 +138,6 @@ async function run() {
   r = await call('GET', '/auth/me', { token: 'invalid.token.value' });
   expect('잘못된 토큰 → 401', r.status === 401, `${r.status}`);
 
-  // ── 4. 도서 (API 대신 DB 에 직접 넣은 검사용 도서) ──
   console.log('\n[4] 도서 상세');
   const [ins] = await pool.query(
     `INSERT INTO books (isbn, title, author, publisher, publish_date, cover_url)
@@ -166,7 +154,6 @@ async function run() {
   );
   expect('publish_date 형식 YYYY-MM-DD', r.data.book?.publish_date === '2026-01-01', `받은 값: ${r.data.book?.publish_date}`);
 
-  // ── 5. 리뷰 작성 ────────────────────────────────────
   console.log('\n[5] 리뷰 작성');
   r = await call('POST', '/reviews', { body: { isbn: testIsbn, rating: 4, content: '검사' } });
   expect('로그인 없이 작성 → 401', r.status === 401, `${r.status}`);
@@ -200,12 +187,11 @@ async function run() {
   const created = r.data.reviews?.[0];
   expect('reviews.created_at / updated_at 저장됨', created?.created_at && created?.updated_at, JSON.stringify(created));
 
-  // ── 6. 리뷰 수정 ────────────────────────────────────
   console.log('\n[6] 리뷰 수정');
   r = await call('PUT', `/reviews/${reviewId}`, { token: tokenB, body: { rating: 1, content: '남의 리뷰 수정' } });
   expect('다른 사람이 수정 → 403', r.status === 403, `${r.status}`);
 
-  await new Promise((res) => setTimeout(res, 1100)); // updated_at 이 바뀌는지 보려고 1초 대기
+  await new Promise((res) => setTimeout(res, 1100));
   r = await call('PUT', `/reviews/${reviewId}`, { token: tokenA, body: { rating: 5, content: '수정된 리뷰' } });
   expect('본인 수정 → 200', r.status === 200, `${r.status} ${JSON.stringify(r.data)}`);
 
@@ -217,7 +203,6 @@ async function run() {
   r = await call('PUT', '/reviews/999999999', { token: tokenA, body: { rating: 3, content: 'x' } });
   expect('없는 리뷰 수정 → 404', r.status === 404, `${r.status}`);
 
-  // ── 7. 내 리뷰 / 회원별 리뷰 (JOIN) ─────────────────
   console.log('\n[7] 내 리뷰 / 회원별 리뷰');
   r = await call('GET', '/users/me/reviews', { token: tokenA });
   expect(
@@ -246,7 +231,6 @@ async function run() {
   r = await call('GET', '/users/999999999/reviews');
   expect('없는 회원 → 404', r.status === 404, `${r.status}`);
 
-  // ── 8. 리뷰 삭제 ────────────────────────────────────
   console.log('\n[8] 리뷰 삭제');
   r = await call('DELETE', `/reviews/${reviewId}`, { token: tokenB });
   expect('다른 사람이 삭제 → 403', r.status === 403, `${r.status}`);
@@ -257,19 +241,99 @@ async function run() {
   r = await call('GET', `/books/${testIsbn}`);
   expect('삭제 후 리뷰 0개', r.data.stats?.reviewCount === 0, JSON.stringify(r.data.stats));
 
-  // ── 9. 도서 검색 (국립중앙도서관 API) ───────────────
-  console.log('\n[9] 도서 검색 (국립중앙도서관 API)');
-  if (!process.env.NLK_CERT_KEY) {
-    console.log('  - 건너뜀: NLK_CERT_KEY 가 비어 있음 (키 승인 후 다시 실행하세요)');
+  console.log('\n[8-0] 리뷰 정렬 / 내 리뷰 분리 / 별점 분포');
+  await call('POST', '/reviews', { token: tokenA, body: { isbn: testIsbn, rating: 5, content: 'A 다시 작성' } });
+  await call('POST', '/reviews', { token: tokenB, body: { isbn: testIsbn, rating: 2, content: 'B 작성' } });
+
+  r = await call('GET', `/books/${testIsbn}/reviews?sort=rating_asc`);
+  expect('별점 낮은순 → B 먼저', r.data.reviews?.[0]?.rating === 2 && r.data.total === 2, JSON.stringify(r.data));
+
+  r = await call('GET', `/books/${testIsbn}/reviews?sort=rating_desc`);
+  expect('별점 높은순 → A 먼저', r.data.reviews?.[0]?.rating === 5, JSON.stringify(r.data));
+
+  r = await call('GET', `/books/${testIsbn}/reviews`, { token: tokenA });
+  expect(
+    '로그인 시 내 리뷰는 myReview 로 분리',
+    r.data.myReview?.user_id === idA && r.data.reviews?.length === 1 && r.data.reviews[0].user_id === idB,
+    JSON.stringify(r.data),
+  );
+
+  r = await call('GET', `/books/${testIsbn}/reviews?page=2`);
+  expect('없는 페이지 → 빈 목록', r.status === 200 && r.data.reviews?.length === 0, JSON.stringify(r.data));
+
+  r = await call('GET', `/books/${testIsbn}`);
+  expect(
+    '별점 분포 (5점 1, 2점 1)',
+    r.data.stats?.distribution?.[5] === 1 && r.data.stats?.distribution?.[2] === 1,
+    JSON.stringify(r.data.stats),
+  );
+
+  r = await call('GET', `/users/${idA}/reviews`);
+  expect('회원별 리뷰 통계', r.data.stats?.reviewCount === 1 && r.data.stats?.avgRating === 5, JSON.stringify(r.data));
+
+  console.log('\n[8-1] 회원 정보 수정 / 탈퇴');
+  r = await call('PUT', '/auth/me', { token: tokenB, body: { currentPassword: 'wrong-password', nickname: 'x' } });
+  expect('정보 수정 - 틀린 현재 비밀번호 → 400', r.status === 400, `${r.status}`);
+
+  const newNick = `검사B2_${tag}`;
+  r = await call('PUT', '/auth/me', {
+    token: tokenB,
+    body: { currentPassword: userB.password, nickname: newNick, newPassword: 'check-pass-5678' },
+  });
+  expect(
+    '정보 수정 → 새 토큰 + 닉네임 반영',
+    r.status === 200 && r.data.token && r.data.user?.nickname === newNick,
+    JSON.stringify(r.data),
+  );
+  const tokenB2 = r.data.token;
+
+  r = await call('POST', '/auth/login', { body: { username: userB.username, password: 'check-pass-5678' } });
+  expect('바뀐 비밀번호로 로그인', r.status === 200, `${r.status}`);
+
+  r = await call('DELETE', '/auth/me', { token: tokenB2, body: { password: userB.password } });
+  expect('탈퇴 - 틀린 비밀번호 → 400', r.status === 400, `${r.status}`);
+
+  r = await call('DELETE', '/auth/me', { token: tokenB2, body: { password: 'check-pass-5678' } });
+  expect('회원 탈퇴 → 200', r.status === 200, `${r.status} ${JSON.stringify(r.data)}`);
+
+  r = await call('GET', '/auth/me', { token: tokenB2 });
+  expect('탈퇴한 회원의 토큰 → 401', r.status === 401, `${r.status}`);
+
+  r = await call('POST', '/reviews', { token: tokenB2, body: { isbn: testIsbn, rating: 3, content: '탈퇴 후 작성' } });
+  expect('탈퇴한 회원은 리뷰 작성 불가 → 401', r.status === 401, `${r.status}`);
+
+  const badJson = await fetch(`${BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{bad json',
+  });
+  expect('깨진 JSON → 400', badJson.status === 400, `${badJson.status}`);
+
+  const noBody = await fetch(`${BASE}/auth/login`, { method: 'POST' });
+  expect('본문 없는 요청도 500 이 아님 → 401', noBody.status === 401, `${noBody.status}`);
+
+  console.log('\n[9] 도서 검색 (카카오 책 검색 API)');
+  if (!process.env.KAKAO_API_KEY) {
+    console.log('  - 건너뜀: KAKAO_API_KEY 가 비어 있음');
   } else {
     r = await call('GET', `/books/search?${new URLSearchParams({ q: '어린왕자', page: 1 })}`);
     expect('제목 검색', r.status === 200 && Array.isArray(r.data.books), `${r.status} ${JSON.stringify(r.data)}`);
+    const withCover = (r.data.books || []).filter((b) => b.cover_url).length;
+    console.log(`    (첫 페이지 ${r.data.books?.length ?? 0}권 중 표지 있는 책 ${withCover}권)`);
     const first = r.data.books?.[0];
     if (first) {
-      // 검색 결과 클릭 → 상세 화면 (DB 에 없는 책은 외부 API 에서 ISBN 으로 조회)
       r = await call('GET', `/books/${first.isbn}`);
       expect('검색 결과 도서 상세', r.status === 200 && r.data.book?.isbn === first.isbn, JSON.stringify(r.data));
+
+      r = await call('GET', `/books/search?${new URLSearchParams({ q: first.isbn, type: 'isbn', page: 1 })}`);
+      expect('ISBN 검색', r.status === 200 && r.data.books?.[0]?.isbn === first.isbn, JSON.stringify(r.data));
     }
+
+    r = await call('GET', `/books/search?${new URLSearchParams({ q: '12345', type: 'isbn', page: 1 })}`);
+    expect('잘못된 ISBN 검색 → 400', r.status === 400, `${r.status}`);
+
+    r = await call('GET', '/books/9790000000001');
+    expect('없는 ISBN 상세 → 404', r.status === 404, `${r.status} ${JSON.stringify(r.data)}`);
   }
 }
 

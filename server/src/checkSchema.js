@@ -1,13 +1,11 @@
 import pool from './db.js';
 
-// 코드가 사용하는 테이블/컬럼 목록
 const REQUIRED = {
   users: ['user_id', 'username', 'password_hash', 'nickname', 'created_at'],
   books: ['book_id', 'isbn', 'title', 'author', 'publisher', 'publish_date', 'cover_url'],
   reviews: ['review_id', 'user_id', 'book_id', 'rating', 'content', 'created_at', 'updated_at'],
 };
 
-// 서버 시작 시 Workbench 에서 만든 DB 에 필요한 컬럼이 다 있는지 확인
 export default async function checkSchema() {
   const [rows] = await pool.query(
     `SELECT TABLE_NAME AS t, COLUMN_NAME AS c

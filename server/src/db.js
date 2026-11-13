@@ -9,7 +9,7 @@ const pool = mysql.createPool({
   database: process.env.DB_NAME || 'bookdam',
   waitForConnections: true,
   connectionLimit: 10,
-  dateStrings: true, // DATE/DATETIME 을 문자열로 받기 (타임존 밀림 방지)
+  dateStrings: true,
   charset: 'utf8mb4',
 });
 

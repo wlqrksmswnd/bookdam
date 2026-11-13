@@ -1,8 +1,8 @@
 import { useState } from 'react'
 
-// 표지가 없거나 이미지 로드에 실패하면 제목이 들어간 대체 표지 표시
 export default function BookCover({ src, title, className = '' }) {
-  const [failed, setFailed] = useState(false)
+  const [failedSrc, setFailedSrc] = useState(null)
+  const failed = failedSrc === src
 
   if (!src || failed) {
     return (
@@ -18,8 +18,9 @@ export default function BookCover({ src, title, className = '' }) {
     <img
       src={src}
       alt={`${title} 표지`}
-      onError={() => setFailed(true)}
-      className={`aspect-[3/4] rounded object-cover shadow-sm ${className}`}
+      loading="lazy"
+      onError={() => setFailedSrc(src)}
+      className={`block aspect-[3/4] rounded object-cover shadow-sm ${className}`}
     />
   )
 }

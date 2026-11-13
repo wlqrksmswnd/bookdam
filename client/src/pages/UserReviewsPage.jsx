@@ -7,7 +7,7 @@ import UserReviewList from './UserReviewList.jsx'
 export default function UserReviewsPage() {
   const { userId } = useParams()
   const { user } = useAuth()
-  const fetcher = useCallback(() => api.userReviews(userId), [userId])
+  const fetcher = useCallback((listParams) => api.userReviews(userId, listParams), [userId])
 
-  return <UserReviewList key={userId} fetcher={fetcher} isOwner={user?.userId === Number(userId)} />
+  return <UserReviewList key={userId} fetcher={fetcher} isOwner={user?.userId === Number(userId)} showBack />
 }

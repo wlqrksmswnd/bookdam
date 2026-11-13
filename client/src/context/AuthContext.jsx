@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useEffect, useState } from 'react'
-import { api, tokenStore } from '../api/client.js'
+import { api, tokenStore, LOGOUT_EVENT } from '../api/client.js'
 
 const AuthContext = createContext(null)
 
@@ -8,7 +8,6 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(() => Boolean(tokenStore.get()))
 
-  // 새로고침 시 저장된 토큰으로 로그인 상태 복원
   useEffect(() => {
     if (!tokenStore.get()) return
     api
@@ -16,6 +15,12 @@ export function AuthProvider({ children }) {
       .then((data) => setUser(data.user))
       .catch(() => tokenStore.clear())
       .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => {
+    const onLogout = () => setUser(null)
+    window.addEventListener(LOGOUT_EVENT, onLogout)
+    return () => window.removeEventListener(LOGOUT_EVENT, onLogout)
   }, [])
 
   const handleAuth = ({ token, user }) => {
@@ -27,10 +32,10 @@ export function AuthProvider({ children }) {
     user,
     loading,
     login: async (form) => handleAuth(await api.login(form)),
-    // 회원가입은 계정만 만들고 로그인 상태로 만들지 않음 (로그인 화면에서 다시 로그인)
     register: async (form) => {
       await api.register(form)
     },
+    updateProfile: async (form) => handleAuth(await api.updateMe(form)),
     logout: () => {
       tokenStore.clear()
       setUser(null)

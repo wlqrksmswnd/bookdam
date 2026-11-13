@@ -4,11 +4,24 @@
   --font-sans: "Noto Sans KR", system-ui, sans-serif;
   --font-serif: "Gowun Batang", serif;
 
-  /* 북담 색상: 종이 / 잉크 / 책갈피 */
   --color-paper: #faf7f2;
   --color-ink: #2b2522;
   --color-accent: #a0522d;
   --color-accent-dark: #7f3f20;
+  --color-danger: #cd000a;
+  --color-danger-dark: #a30008;
+
+  --animate-fade-in: fade-in 150ms ease-out;
+  --animate-pop-in: pop-in 150ms ease-out;
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes pop-in {
+    from { opacity: 0; transform: translateY(8px) scale(0.97); }
+    to { opacity: 1; transform: none; }
+  }
 }
 
 body {
